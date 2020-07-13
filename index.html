@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css" integrity="sha384-9aIt2nRpC12Uk9gS9baDl411NQApFmC26EwAOH8WgZl5MYYxFfc+NcPb1dKGj7Sk" crossorigin="anonymous">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.1/css/all.min.css">
+    <title>Graphible</title>
+
+    <style>
+      body {
+          border-top: 10px solid #5bbdbf;
+      }
+      .branding {
+          font-family: Orbitron, sans-serif;
+          margin: 0.3em 0 0 0;
+      }
+      .task {
+          border: 1px solid #ccc;
+          border-left: none;
+      }
+      .failed, .unreachable {
+          border-left: 4px solid red;
+          border-color: red;
+      }
+      .changed {
+          border-left: 4px solid orange;
+          border-color: orange;
+      }
+      .skipped {
+          border-left: 4px solid #777;
+          border-color: #777;
+      }
+      .success {
+          border-left: 4px solid green;
+          border-color: green;
+      }
+      .popover {
+          max-width: 35%;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="row">
+        <div class="col-sm">
+          <h1 class="branding">
+            Graphible
+          </h1>
+          <small>A relrod experiment using Ansible callbacks.</small>
+        </div>
+      </div>
+
+      {#
+      Only do the tab fun when there are multiple playbooks, otherwise keep
+      a clean look.
+      #}
+      {% if playbooks|length > 1 %}
+        <div class="row">
+          <div class="col-sm">
+            <ul class="nav nav-tabs" id="myTab" role="tablist">
+              {% for playbook in playbooks %}
+                <li class="nav-item">
+                  <a class="nav-link {{ 'active' if loop.index == 1 else '' }}"
+                     id="tab-playbook-{{ loop.index }}"
+                     data-toggle="tab"
+                     href="#playbook-{{ loop.index }}"
+                     role="tab"
+                     aria-controls="playbook-{{ loop.index }}"
+                     aria-selected="{{ 'true' if loop.index == 1 else 'false' }}">
+                     {{ playbook._file_name }}
+                  </a>
+                </li>
+              {% endfor %}
+            </ul>
+          </div>
+        </div>
+      {% else %}
+        <hr />
+      {% endif %}
+
+      <div class="row">
+        <div class="col-sm">
+          {% if playbooks|length > 1 %}
+            <div class="tab-content" id="tab-content">
+          {% else %}
+            <div>
+          {% endif %}
+          {% for playbook in playbooks %}
+            {% set pb_loop = loop %}
+            {% if playbooks|length > 1 %}
+              <div class="tab-pane fade show {{ 'active' if loop.index == 1 else '' }}"
+                   id="playbook-{{ loop.index }}"
+                   role="tabpanel"
+                   aria-labelledby="tab-playbook-{{ loop.index }}">
+             {% else %}
+               <div>
+             {% endif %}
+                 <!-- Playbook information here -->
+
+                 <div class="row">
+                   <div class="col-sm">
+                     <h2>Playbook: {{ playbook._file_name }}</h2>
+                     <p>
+                       <em>
+                         Took
+                         <strong>
+                           {{ duration(
+                                   times['playbook'][playbook]['end'] -
+                                   times['playbook'][playbook]['start']) }}
+                         </strong>
+                       </em>
+                     </p>
+                   </div>
+                 </div>
+
+                 {% for play, uuid_res in playbook_results[playbook].items() %}
+
+                   <h5 class="mt-4">Play {{ loop.index }} ({{ play.get_name() }})</h5>
+
+                   <div class="row">
+                     <div class="col-sm">
+                       <h4 class="text-center">Play timeline (strategy: {{ play.strategy }})</h4>
+                       <div class="timeline"
+                            id="timeline-playbook-{{ pb_loop.index }}-play-{{ loop.index }}">
+                       </div>
+                     </div>
+                   </div>
+
+
+                   {% for uuid, host_results in uuid_res.items() %}
+                     <div class="row">
+                       <div class="col-sm">
+                         <div class="task {{ css_classes[uuid]['general'] }} mb-4 p-3">
+                           <h5>
+                             <span class="text-monospace">{{ tasks[uuid].get_name() }}</span>
+                             {% if task_warnings[uuid] or task_deprecations[uuid] %}
+                               <div class="float-right">
+                                 {% if task_warnings[uuid] %}
+                                   <a class="badge badge-warning"
+                                      data-container="body"
+                                      data-toggle="popover"
+                                      data-trigger="focus"
+                                      tabindex="-1"
+                                      data-placement="left"
+                                      data-html="true"
+                                      data-content="<ul>{% for warning in task_warnings[uuid] %}<li>{{warning}}</li>{% endfor %}</ul>">
+                                     {{ pluralize('warning', task_warnings[uuid]|length) }}
+                                   </a>
+                                 {% endif %}
+
+                                 {% if task_deprecations[uuid] %}
+                                   <a class="badge badge-info"
+                                      data-container="body"
+                                      data-toggle="popover"
+                                      data-trigger="focus"
+                                      tabindex="-1"
+                                      data-placement="left"
+                                      data-html="true"
+                                      data-content="<ul>{% for warning in task_deprecations[uuid] %}<li>{{warning}}</li>{% endfor %}</ul>">
+                                     {{ pluralize('warning', task_deprecations[uuid]|length) }}
+                                   </a>
+                                 {% endif %}
+                               </div>
+                             {% endif %}
+                           </h5>
+
+
+                           <table class="table">
+                             <thead>
+                               <tr>
+                                 <th scope="col"></th>
+                                 <th scope="col" style="white-space: nowrap;">Host</th>
+                                 <th scope="col" style="white-space: nowrap;">Execution Time</th>
+                                 <th scope="col" style="width: 100%;">Return</th>
+                               </tr>
+                             </thead>
+                             <tbody>
+                               {% for host, info in host_results.items() %}
+                                 <tr>
+                                   <td style="white-space: nowrap;">
+                                     <i class="fa {{ css_classes[uuid]['hosts'][host]['icon'] }}"></i>
+                                   </td>
+                                   <td style="white-space: nowrap;">
+                                     {{ host }}
+                                   </td>
+                                   <td style="white-space: nowrap;">
+                                     {{ duration(
+                                            times['runner'][uuid][host]['end'] -
+                                            times['runner'][uuid][host]['start']) }}
+                                   </td>
+                                   <td style="width: 100%;">
+                                     <!-- TODO: Move this list out to cb plugin config -->
+                                     {% set keys = ['msg', 'stdout', 'stderr'] %}
+                                     {% for key in keys %}
+                                       {% if info['result']._result.get(key) %}
+                                         <div class="text-monospace">{{ key }}</div>
+                                         <pre><code>{{ info['result']._result[key] }}</code></pre>
+                                       {% endif %}
+                                     {% endfor %}
+                                   </td>
+                                 </tr>
+                               {% endfor %}
+                             </tbody>
+                           </table>
+                         </div>
+                       </div>
+                     </div>
+                   {% endfor %}
+                 {% endfor %}
+
+                 <!-- /Playbook information -->
+               </div>
+             {% endfor %}
+           </div>
+          </div>
+        </div>
+
+        <p class="text-center">
+          This project is neither supported nor endorsed by Red Hat, Inc., nor Ansible.
+        </p>
+
+    </div> <!-- /.container -->
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"
+            integrity="sha384-DfXdz2htPH0lsSSs5nCTpuj/zy4C+OGpamoFVy38MVBnE+IbbVYUew+OrCXaRkfj"
+            crossorigin="anonymous">
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js"
+            integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo"
+            crossorigin="anonymous">
+    </script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.min.js"
+            integrity="sha384-OgVRvuATP1z7JjHLkuOU7Xw704+h835Lr+6QL9UvYjZE3Ipu6Tp75j7Bh/kR0JKI"
+            crossorigin="anonymous">
+    </script>
+    <script src="https://www.gstatic.com/charts/loader.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.27.0/moment.min.js"></script>
+
+    {% for playbook in playbooks %}
+      {% set pb_loop = loop %}
+      {% for play, uuid_res in playbook_results[playbook].items() %}
+          <script type="text/javascript">
+            google.charts.load("current", {packages:["timeline"]});
+            google.charts.setOnLoadCallback(drawChart);
+            function drawChart() {
+
+                var container = document.getElementById(
+                    'timeline-playbook-{{ pb_loop.index }}-play-{{ loop.index }}');
+                var chart = new google.visualization.Timeline(container);
+                var dataTable = new google.visualization.DataTable();
+                dataTable.addColumn({ type: 'string', id: 'Host' });
+                dataTable.addColumn({ type: 'string', id: 'Task' });
+                dataTable.addColumn({ type: 'date', id: 'Start' });
+                dataTable.addColumn({ type: 'date', id: 'End' });
+                dataTable.addRows([
+                    {% for uuid, host_results in uuid_res.items() %}
+                      {% for host_name in host_results.keys() %}
+                        [ {{ host_name|tojson }}, {{ tasks[uuid].get_name()|tojson }}, {{ js_time(times['runner'][uuid][host_name]['start']) }}, {{ js_time(times['runner'][uuid][host_name]['end']) }} ],
+                      {% endfor %}
+                    {% endfor %}
+                ]);
+
+                var options = {
+                    hAxis: {
+                        format: 'HH:mm:ss'
+                    },
+                };
+
+                chart.draw(dataTable, options);
+                var realheight=parseInt($(".timeline div:first-child div:first-child div:first-child div svg").attr("height"));
+                options.height=realheight;
+                chart.draw(dataTable, options);
+            }
+          </script>
+          <script type="text/javascript">$(function () { $('[data-toggle="popover"]').popover(); });</script>
+      {% endfor %}
+    {% endfor %}
+
+  </body>
+</html>
